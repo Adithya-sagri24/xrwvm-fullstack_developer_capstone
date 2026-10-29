@@ -9,28 +9,32 @@ const port = 3030;
 app.use(cors());
 app.use(require('body-parser').urlencoded({ extended: false }));
 
-const reviews_data = JSON.parse(fs.readFileSync("reviews.json", 'utf8'));
-const dealerships_data = JSON.parse(fs.readFileSync("dealerships.json", 'utf8'));
+const reviews_file = fs.existsSync("reviews.json") ? "reviews.json" : "data/reviews.json";
+const dealerships_file = fs.existsSync("dealerships.json") ? "dealerships.json" : "data/dealerships.json";
 
-mongoose.connect("mongodb://mongo_db:27017/",{'dbName':'dealershipsDB'});
+const reviews_data = JSON.parse(fs.readFileSync(reviews_file, 'utf8'));
+const dealerships_data = JSON.parse(fs.readFileSync(dealerships_file, 'utf8'));
 
+let memory_reviews = [...reviews_data.reviews];
+let memory_dealers = [...dealerships_data.dealerships];
+let mongoConnected = false;
+
+const mongo_url = process.env.MONGO_URL || "mongodb://127.0.0.1:27017/";
 
 const Reviews = require('./review');
-
 const Dealerships = require('./dealership');
 
-try {
-  Reviews.deleteMany({}).then(()=>{
-    Reviews.insertMany(reviews_data.reviews);
+mongoose.connect(mongo_url, { 'dbName': 'dealershipsDB', serverSelectionTimeoutMS: 2000 })
+  .then(() => {
+    mongoConnected = true;
+    console.log("Connected to MongoDB successfully.");
+    Reviews.deleteMany({}).then(() => Reviews.insertMany(reviews_data.reviews));
+    Dealerships.deleteMany({}).then(() => Dealerships.insertMany(dealerships_data.dealerships));
+  })
+  .catch((err) => {
+    console.log("MongoDB connection failed or not running (" + err.message + "). Falling back to local in-memory JSON data.");
+    mongoConnected = false;
   });
-  Dealerships.deleteMany({}).then(()=>{
-    Dealerships.insertMany(dealerships_data.dealerships);
-  });
-  
-} catch (error) {
-  res.status(500).json({ error: 'Error fetching documents' });
-}
-
 
 // Express route to home
 app.get('/', async (req, res) => {
@@ -40,30 +44,46 @@ app.get('/', async (req, res) => {
 // Express route to fetch all reviews
 app.get('/fetchReviews', async (req, res) => {
   try {
-    const documents = await Reviews.find();
-    res.json(documents);
+    if (mongoConnected) {
+      const documents = await Reviews.find();
+      res.json(documents);
+    } else {
+      res.json(memory_reviews);
+    }
   } catch (error) {
-    res.status(500).json({ error: 'Error fetching documents' });
+    res.json(memory_reviews);
   }
 });
 
 // Express route to fetch reviews by a particular dealer
 app.get('/fetchReviews/dealer/:id', async (req, res) => {
   try {
-    const documents = await Reviews.find({dealership: req.params.id});
-    res.json(documents);
+    const dealerId = parseInt(req.params.id, 10);
+    if (mongoConnected) {
+      const documents = await Reviews.find({ dealership: req.params.id });
+      res.json(documents);
+    } else {
+      const filtered = memory_reviews.filter(r => r.dealership == req.params.id || r.dealership == dealerId);
+      res.json(filtered);
+    }
   } catch (error) {
-    res.status(500).json({ error: 'Error fetching documents' });
+    const dealerId = parseInt(req.params.id, 10);
+    const filtered = memory_reviews.filter(r => r.dealership == req.params.id || r.dealership == dealerId);
+    res.json(filtered);
   }
 });
 
 // Express route to fetch all dealerships
 app.get('/fetchDealers', async (req, res) => {
   try {
-    const dealerships = await Dealerships.find(); // Fetch all dealerships
-    res.status(200).json(dealerships); // Send the data as JSON
+    if (mongoConnected) {
+      const dealerships = await Dealerships.find();
+      res.status(200).json(dealerships);
+    } else {
+      res.status(200).json(memory_dealers);
+    }
   } catch (error) {
-    res.status(500).json({ error: 'Error fetching dealerships' }); // Handle errors
+    res.status(200).json(memory_dealers);
   }
 });
 
@@ -71,57 +91,78 @@ app.get('/fetchDealers', async (req, res) => {
 app.get('/fetchDealers/:state', async (req, res) => {
     const state = req.params.state;
     try {
+      if (mongoConnected) {
         const dealerships = await Dealerships.find({ state });
-        if (dealerships.length === 0 ) {
-            res.status(404).json({ error: 'No dealerships found in state: ${state}'});
+        if (dealerships.length === 0) {
+            res.status(404).json({ error: `No dealerships found in state: ${state}` });
         } else {
             res.json(dealerships);
         }
+      } else {
+        const filtered = memory_dealers.filter(d => d.state.toLowerCase() === state.toLowerCase());
+        if (filtered.length === 0) {
+          res.status(404).json({ error: `No dealerships found in state: ${state}` });
+        } else {
+          res.json(filtered);
+        }
+      }
     } catch (error) {
         res.status(500).json({ error: 'Error fetching dealerships by state' });
     }
-  });
+});
 
 // Express route to fetch dealers by ID
-// Correcting the query to match the dealership data
 app.get('/fetchDealer/:id', async (req, res) => {
-    const id = parseInt(req.params.id, 10); // Parse the ID as an integer
+    const id = parseInt(req.params.id, 10);
     try {
+      if (mongoConnected) {
         const dealership = await Dealerships.findOne({ id });
         if (!dealership) {
-            res.status(404).json({ error: 'No dealership found with ID: ${id}'});
+            res.status(404).json({ error: `No dealership found with ID: ${id}` });
         } else {
             res.json(dealership);
         }
+      } else {
+        const found = memory_dealers.find(d => d.id === id);
+        if (!found) {
+          res.status(404).json({ error: `No dealership found with ID: ${id}` });
+        } else {
+          res.json(found);
+        }
+      }
     } catch (error) {
-        res.status(500).json({ error: 'Error fetching dealership by ID'});
+        res.status(500).json({ error: 'Error fetching dealership by ID' });
     }
-  });
-  
+});
 
-//Express route to insert review
+// Express route to insert review
 app.post('/insert_review', express.raw({ type: '*/*' }), async (req, res) => {
-  data = JSON.parse(req.body);
-  const documents = await Reviews.find().sort( { id: -1 } );
-  let new_id = documents[0].id+1;
-
-  const review = new Reviews({
-		"id": new_id,
-		"name": data.name,
-		"dealership": data.dealership,
-		"review": data.review,
-		"purchase": data.purchase,
-		"purchase_date": data.purchase_date,
-		"car_make": data.car_make,
-		"car_model": data.car_model,
-		"car_year": data.car_year,
-	});
-
   try {
-    const savedReview = await review.save();
-    res.json(savedReview);
+    const data = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString());
+    let new_id = (memory_reviews.length ? Math.max(...memory_reviews.map(r => r.id || 0)) : 0) + 1;
+
+    const reviewObj = {
+      "id": new_id,
+      "name": data.name,
+      "dealership": data.dealership,
+      "review": data.review,
+      "purchase": data.purchase,
+      "purchase_date": data.purchase_date,
+      "car_make": data.car_make,
+      "car_model": data.car_model,
+      "car_year": data.car_year,
+    };
+
+    memory_reviews.unshift(reviewObj);
+
+    if (mongoConnected) {
+      const review = new Reviews(reviewObj);
+      const savedReview = await review.save();
+      return res.json(savedReview);
+    }
+    return res.json(reviewObj);
   } catch (error) {
-		console.log(error);
+    console.log(error);
     res.status(500).json({ error: 'Error inserting review' });
   }
 });
