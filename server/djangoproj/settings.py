@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/3.2/ref/settings/
 """
 
 import os
+import shutil
 from pathlib import Path
 
 
@@ -94,8 +95,6 @@ WSGI_APPLICATION = 'djangoproj.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
-
-import shutil
 
 if os.environ.get('VERCEL'):
     tmp_db = '/tmp/db.sqlite3'
