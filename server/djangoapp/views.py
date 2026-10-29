@@ -3,6 +3,8 @@
 from django.contrib.auth.models import User
 from django.http import JsonResponse
 from django.contrib.auth import login, logout, authenticate
+from django.core.management import call_command
+from django.db import connection
 import logging
 import json
 from django.views.decorators.csrf import csrf_exempt
@@ -13,10 +15,47 @@ from .restapis import get_request, analyze_review_sentiments, post_review
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 
+DEFAULT_CARS = [
+    {"CarModel": "Pathfinder", "CarMake": "Nissan"},
+    {"CarModel": "Qashqai", "CarMake": "Nissan"},
+    {"CarModel": "XTRAIL", "CarMake": "Nissan"},
+    {"CarModel": "A-Class", "CarMake": "Mercedes"},
+    {"CarModel": "C-Class", "CarMake": "Mercedes"},
+    {"CarModel": "E-Class", "CarMake": "Mercedes"},
+    {"CarModel": "A4", "CarMake": "Audi"},
+    {"CarModel": "A5", "CarMake": "Audi"},
+    {"CarModel": "A6", "CarMake": "Audi"},
+    {"CarModel": "Sorrento", "CarMake": "Kia"},
+    {"CarModel": "Carnival", "CarMake": "Kia"},
+    {"CarModel": "Cerato", "CarMake": "Kia"},
+    {"CarModel": "Corolla", "CarMake": "Toyota"},
+    {"CarModel": "Camry", "CarMake": "Toyota"},
+    {"CarModel": "Kluger", "CarMake": "Toyota"},
+]
+
+
+def _ensure_db_initialized():
+    try:
+        tables = connection.introspection.table_names()
+        if 'djangoapp_carmake' not in tables or 'auth_user' not in tables:
+            call_command('migrate', interactive=False)
+            initiate()
+            if not User.objects.filter(username='root').exists():
+                User.objects.create_superuser(
+                    'root', 'root@example.com', 'rootpassword'
+                )
+            if not User.objects.filter(username='admin').exists():
+                User.objects.create_superuser(
+                    'admin', 'admin@example.com', 'admin123'
+                )
+    except Exception as e:
+        logger.error(f"Error initializing DB: {e}")
+
 
 # Create a `login_request` view to handle sign in request
 @csrf_exempt
 def login_user(request):
+    _ensure_db_initialized()
     # Get username and password from request.POST dictionary
     data = json.loads(request.body)
     username = data['userName']
@@ -41,6 +80,7 @@ def logout_request(request):
 # Create a `registration` view to handle sign up request
 @csrf_exempt
 def registration(request):
+    _ensure_db_initialized()
     data = json.loads(request.body)
     username = data['userName']
     password = data['password']
@@ -75,20 +115,26 @@ def registration(request):
 
 # Method to get the list of cars
 def get_cars(request):
-    count = CarMake.objects.filter().count()
-    print(count)
-    if count == 0:
-        initiate()
-    car_models = CarModel.objects.select_related('car_make')
-    cars = []
-    for car_model in car_models:
-        cars.append(
-            {
-                "CarModel": car_model.name,
-                "CarMake": car_model.car_make.name
-            }
-        )
-    return JsonResponse({"CarModels": cars})
+    _ensure_db_initialized()
+    try:
+        count = CarMake.objects.filter().count()
+        print(count)
+        if count == 0:
+            initiate()
+        car_models = CarModel.objects.select_related('car_make')
+        cars = []
+        for car_model in car_models:
+            cars.append(
+                {
+                    "CarModel": car_model.name,
+                    "CarMake": car_model.car_make.name
+                }
+            )
+        if cars:
+            return JsonResponse({"CarModels": cars})
+    except Exception as e:
+        logger.error(f"Error in get_cars: {e}")
+    return JsonResponse({"CarModels": DEFAULT_CARS})
 
 
 # Method to get list of dealerships
