@@ -33,14 +33,9 @@ def login_user(request):
 
 # Create a `logout_request` view to handle sign out request
 def logout_request(request):
-    if request.method == 'POST':  # Logout via POST for better CSRF protection
-        logout(request)
-        return JsonResponse(
-            {"success": True, "message": "Logged out successfully"}
-        )
-    return JsonResponse(
-        {"success": False, "error": "Invalid request method"}, status=400
-    )
+    logout(request)
+    data = {"userName": ""}
+    return JsonResponse(data)
 
 
 # Create a `registration` view to handle sign up request

@@ -9,7 +9,8 @@ urlpatterns = [
     path(route='register', view=views.registration, name='register'),
     # path for login/logout
     path(route='login', view=views.login_user, name='login'),
-    path('logout/', views.logout_request, name='logout'),
+    path('logout', views.logout_request, name='logout'),
+    path('logout/', views.logout_request, name='logout_slash'),
     # path for getting the list of cars
     path(route='get_cars', view=views.get_cars, name='getcars'),
     # path for getting dealerships
