@@ -29,25 +29,16 @@ SECRET_KEY =\
 DEBUG = True
 
 ALLOWED_HOSTS = [
+    '*',
     'localhost',
-    (
-        'https://ripochesierr-8000.theianext-0-labs-prod-misc-tools-us-east-0.'
-        'proxy.cognitiveclass.ai'
-    ),
-    (
-        'https://ripochesierr-8000.theiadockernext-1-labs-prod-theiak8s-4-'
-        'tor01.proxy.cognitiveclass.ai'
-    )
+    '127.0.0.1',
+    '.vercel.app',
 ]
 CSRF_TRUSTED_ORIGINS = [
-    (
-        'https://ripochesierr-8000.theianext-0-labs-prod-misc-tools-us-east-0.'
-        'proxy.cognitiveclass.ai'
-    ),
-    (
-        'https://ripochesierr-8000.theiadockernext-0-labs-prod-theiak8s-4-'
-        'tor01.proxy.cognitiveclass.ai'
-    ),
+    'https://*.vercel.app',
+    'https://*.proxy.cognitiveclass.ai',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
 ]
 
 REST_FRAMEWORK = {
@@ -68,6 +59,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -103,10 +95,21 @@ WSGI_APPLICATION = 'djangoproj.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
 
+import shutil
+
+if os.environ.get('VERCEL'):
+    tmp_db = '/tmp/db.sqlite3'
+    orig_db = BASE_DIR / 'db.sqlite3'
+    if orig_db.exists() and not os.path.exists(tmp_db):
+        shutil.copyfile(orig_db, tmp_db)
+    DB_PATH = tmp_db
+else:
+    DB_PATH = BASE_DIR / 'db.sqlite3'
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': DB_PATH,
     }
 }
 
